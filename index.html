@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FlagAgent — say the rollout, see the diff, approve the change</title>
+<meta name="description" content="FlagAgent works a Flagsmith project from plain words: it plans flag changes, shows the exact diffs, and applies nothing until a human approves.">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wordmark">FLAG<span>AGENT</span></div>
+  <div class="topbar-sub">Toggle Wars · Track 02 — AI agents and feature flags</div>
+  <div class="topbar-right">
+    <span class="mode-chip" id="modeChip">MOCK — demo project</span>
+    <button class="ghost-btn" id="settingsBtn" type="button">Connect Flagsmith</button>
+    <button class="ghost-btn" id="motionToggle" type="button" aria-pressed="false">Low motion: off</button>
+  </div>
+</header>
+
+<div class="settings" id="settingsPanel" hidden>
+  <p class="settings-note">Paste the Flagsmith <strong>Organisation API key</strong> and project ID to work a real project. The key stays in this page's memory only — it is never stored, logged or sent anywhere except the Flagsmith API. Leave this closed to stay on the demo project. Full steps: KEY_HOOKUP.md in the repo.</p>
+  <label>Organisation API key <input type="password" id="apiKeyInput" autocomplete="off" spellcheck="false"></label>
+  <label>Project ID <input type="text" id="projectIdInput" inputmode="numeric" autocomplete="off"></label>
+  <label>Project label <input type="text" id="projectNameInput" autocomplete="off" placeholder="My Flagsmith project"></label>
+  <div class="settings-actions">
+    <button class="primary-btn" id="connectBtn" type="button">Connect</button>
+    <button class="ghost-btn" id="mockBtn" type="button">Use the demo project</button>
+    <span class="settings-status" id="settingsStatus" role="status"></span>
+  </div>
+</div>
+
+<main>
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-text">
+      <p class="kicker">A FLAG AGENT WITH A HUMAN GATE</p>
+      <h1>Say the rollout.<br>See the diff.<br><em>Nothing moves without your stamp.</em></h1>
+      <p class="lede">FlagAgent works a Flagsmith project from plain words. Describe the change — a rollout, a test, a kill switch standing guard — and it plans the flag changes, shows you the exact diffs, and applies only what you approve. Then it reads everything back and shows you the proof.</p>
+      <a class="primary-btn hero-cta" href="#console">Work a change</a>
+      <p class="hero-note">Running on a labelled demo project until a real Flagsmith key is connected. The board on the right is live — try its switches.</p>
+    </div>
+    <div class="board-wrap">
+      <div class="board" id="heroBoard" aria-label="A working signal board for three demo flags">
+        <div class="board-head"><span>SIGNAL BOARD</span><span id="boardEnv">PRODUCTION</span></div>
+        <div id="heroSwitches"></div>
+        <p class="board-foot">Real switches. Flip one and the board below keeps up.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROBLEM -->
+  <section class="section" id="problem">
+    <p class="kicker">THE PROBLEM</p>
+    <h2>Flag changes are easy to make and hard to review.</h2>
+    <div class="cards">
+      <article class="card reveal">
+        <h3>The dashboard sprawl</h3>
+        <p>One rollout touches flags, environments, segments and splits across half a dozen screens. Each screen is a chance to change the wrong thing in the wrong place.</p>
+      </article>
+      <article class="card reveal">
+        <h3>Agents with write access</h3>
+        <p>Give an agent an API key and it can move every switch you own, silently, at machine speed. One misread sentence becomes a production incident.</p>
+      </article>
+      <article class="card reveal">
+        <h3>No receipt</h3>
+        <p>After a change lands, proving what actually changed — and that it matches what was asked for — means digging through audit logs by hand.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- SOLUTION -->
+  <section class="section" id="solution">
+    <p class="kicker">HOW FLAGAGENT WORKS</p>
+    <h2>Plan first. Approve second. Apply last.</h2>
+    <div class="cards">
+      <article class="card reveal">
+        <p class="step-num">01</p>
+        <h3>It plans, read-only</h3>
+        <p>Your sentence becomes a list of exact changes — flag, environment, before and after — checked against the traps: variant weights that do not add to 100, a flag name already taken, a guard already broken.</p>
+      </article>
+      <article class="card reveal">
+        <p class="step-num">02</p>
+        <h3>You approve, change by change</h3>
+        <p>Every change is its own line with its own tick box. Reject one and it never happens. A delete needs the flag's name typed out. The plan carries a short hash, so what you approved is what runs — or nothing runs.</p>
+      </article>
+      <article class="card reveal">
+        <p class="step-num">03</p>
+        <h3>It applies, then proves it</h3>
+        <p>Approved changes go to Flagsmith in order. Each one is read back and compared with the plan before it is called done. Guards are checked again at the moment of applying — if a guard broke while you were reading, everything stops.</p>
+      </article>
+    </div>
+    <div class="gate-note reveal">
+      <strong>The gate is the product.</strong> Planning never writes. Applying needs your ticks, your typed name for a delete, a matching plan hash and holding guards — all four, every time.
+    </div>
+  </section>
+
+  <!-- CONSOLE -->
+  <section class="section" id="console">
+    <p class="kicker">THE CONSOLE</p>
+    <h2>Work a flag change</h2>
+    <p class="project-line">Project: <strong id="projectLabel">ChaiKart — storefront (demo project)</strong> · Source: <span id="sourceLabel">local demo board (MOCK)</span></p>
+
+    <div class="console-grid">
+      <ol class="rail">
+        <li class="rail-step" data-step="1"><span>1</span>Say it</li>
+        <li class="rail-step" data-step="2"><span>2</span>See the diff</li>
+        <li class="rail-step" data-step="3"><span>3</span>Approve</li>
+        <li class="rail-step" data-step="4"><span>4</span>Receipt</li>
+      </ol>
+
+      <div class="console-panel">
+        <div class="field-row">
+          <label class="field-grow">Your instruction
+            <textarea id="instruction" rows="3" placeholder="Release the new checkout to 10% of users in production, only if the payments kill switch stays off"></textarea>
+          </label>
+          <label>Environment
+            <select id="envSelect"></select>
+          </label>
+        </div>
+        <div class="chips">
+          <span class="chips-label">Try:</span>
+          <button class="chip" type="button" data-example="Release the new checkout to 10% of users in production, only if the payments kill switch stays off">Guarded rollout</button>
+          <button class="chip" type="button" data-example="Test &quot;Fresh chai, delivered weekly&quot; against &quot;Chai that reaches you in 24 hours&quot; on headline_test split 50/50 in production">Headline test</button>
+          <button class="chip" type="button" data-example="Create a flag called promo_banner with variants control and spring_sale split 50/50">New experiment flag</button>
+          <button class="chip" type="button" data-example="Delete flag legacy_search">Delete a flag</button>
+        </div>
+        <button class="primary-btn" id="planBtn" type="button">Plan it</button>
+
+        <div id="planArea" hidden>
+          <h3 class="panel-h">The plan <span class="hash" id="planHash" title="If the plan is edited after you read it, this hash stops matching and the apply is refused"></span></h3>
+          <ul class="notes" id="planAssumptions"></ul>
+          <div id="guardList"></div>
+          <ul class="notes errors" id="planErrors"></ul>
+          <ul class="notes warnings" id="planWarnings"></ul>
+          <div id="changeList"></div>
+          <div class="apply-row">
+            <button class="primary-btn danger-ok" id="applyBtn" type="button">Apply approved changes</button>
+            <span class="apply-hint" id="applyHint"></span>
+          </div>
+        </div>
+
+        <div id="receiptArea" hidden>
+          <h3 class="panel-h">Receipt</h3>
+          <div id="receiptBody"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="watch reveal">
+      <div class="watch-head">
+        <h3>The board — <span id="watchEnvName">Production</span></h3>
+        <span class="watch-updated" id="watchUpdated"></span>
+        <button class="ghost-btn" id="refreshBtn" type="button">Refresh</button>
+      </div>
+      <div class="watch-scroll">
+        <table class="watch-table">
+          <thead><tr><th>Flag</th><th>State</th><th>Rollout</th><th>Value / variants</th><th>Segment overrides</th></tr></thead>
+          <tbody id="watchBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="logbox">
+      <h3 class="panel-h">Session log</h3>
+      <ul class="log" id="logList"></ul>
+    </div>
+  </section>
+
+  <!-- OUTCOME -->
+  <section class="section" id="outcome">
+    <p class="kicker">OUTCOME SO FAR</p>
+    <h2>Built to be checked, not trusted.</h2>
+    <div class="stats">
+      <div class="stat reveal"><p class="stat-num">29</p><p>automated checks pass on the planner, the executor and the board — including guard refusals and tampered-plan refusals.</p></div>
+      <div class="stat reveal"><p class="stat-num">0</p><p>changes can be applied without approval. Planning is read-only by construction, not by promise.</p></div>
+      <div class="stat reveal"><p class="stat-num">4</p><p>conditions on every apply: your ticks, a typed name for deletes, a matching plan hash, and guards still holding.</p></div>
+      <div class="stat reveal"><p class="stat-num">100%</p><p>of applied changes are read back and compared with the plan before the receipt calls them done.</p></div>
+    </div>
+  </section>
+
+  <footer>
+    <p><strong>Honest limits.</strong> This page runs a labelled demo project (MOCK) until a Flagsmith Organisation API key is connected — the demo data is a stand-in, not a real account. FlagAgent plans rollouts, flags, variants and overrides; starting a Flagsmith experiment stays a deliberate human step in Flagsmith itself, and the plan says so when it applies. Variant weights, guard states and read-backs are all checked against live state at plan time and again at apply time.</p>
+    <p class="foot-line">FlagAgent · Toggle Wars (WeMakeDevs × Flagsmith) · Track 02 · Built by M S Abhishek</p>
+  </footer>
+</main>
+
+<script src="js/seed.js"></script>
+<script src="js/adapter.js"></script>
+<script src="js/planner.js"></script>
+<script src="js/executor.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
