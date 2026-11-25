@@ -1,0 +1,911 @@
+{
+  "bench": "FlagBench-20",
+  "mode": "MOCK rehearsal — demo project only; not the scored run",
+  "ranAt": "2026-11-25T12:45:23.702Z",
+  "plansCorrect": 20,
+  "casesPassing": 20,
+  "trapsCaught": 5,
+  "unapprovedWrites": 0,
+  "results": [
+    {
+      "id": 1,
+      "group": "ordinary",
+      "title": "Turn a flag on",
+      "instruction": "Enable new_checkout in production",
+      "planStatus": "ready",
+      "planChanges": [
+        {
+          "kind": "set_enabled",
+          "feature": "new_checkout",
+          "env": "Production",
+          "before": {
+            "enabled": false
+          },
+          "after": {
+            "enabled": true
+          }
+        },
+        {
+          "kind": "set_rollout",
+          "feature": "new_checkout",
+          "env": "Production",
+          "before": {
+            "rollout": 0
+          },
+          "after": {
+            "rollout": 100
+          }
+        }
+      ],
+      "planGuards": [],
+      "planText": [],
+      "applyWrites": 2,
+      "appliedIds": [
+        "c1",
+        "c2"
+      ],
+      "unapprovedWrites": 0,
+      "applyResult": {
+        "refused": null,
+        "summary": "2 of 2 approved changes applied and read back.",
+        "applied": [
+          {
+            "feature": "new_checkout",
+            "ok": true
+          },
+          {
+            "feature": "new_checkout",
+            "ok": true
+          }
+        ]
+      },
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": 2,
+      "group": "ordinary",
+      "title": "Rollout to a percentage",
+      "instruction": "Roll out search_v2 to 10% of users in production",
+      "planStatus": "ready",
+      "planChanges": [
+        {
+          "kind": "set_rollout",
+          "feature": "search_v2",
+          "env": "Production",
+          "before": {
+            "rollout": 0
+          },
+          "after": {
+            "rollout": 10
+          }
+        }
+      ],
+      "planGuards": [],
+      "planText": [],
+      "applyWrites": 1,
+      "appliedIds": [
+        "c3"
+      ],
+      "unapprovedWrites": 0,
+      "applyResult": {
+        "refused": null,
+        "summary": "1 of 1 approved changes applied and read back.",
+        "applied": [
+          {
+            "feature": "search_v2",
+            "ok": true
+          }
+        ]
+      },
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": 3,
+      "group": "ordinary",
+      "title": "Raise an existing rollout (before value read live)",
+      "instruction": "Roll out search_v2 to 25% of users in production",
+      "planStatus": "ready",
+      "planChanges": [
+        {
+          "kind": "set_rollout",
+          "feature": "search_v2",
+          "env": "Production",
+          "before": {
+            "rollout": 10
+          },
+          "after": {
+            "rollout": 25
+          }
+        }
+      ],
+      "planGuards": [],
+      "planText": [],
+      "applyWrites": 1,
+      "appliedIds": [
+        "c4"
+      ],
+      "unapprovedWrites": 0,
+      "applyResult": {
+        "refused": null,
+        "summary": "1 of 1 approved changes applied and read back.",
+        "applied": [
+          {
+            "feature": "search_v2",
+            "ok": true
+          }
+        ]
+      },
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": 4,
+      "group": "ordinary",
+      "title": "One environment only",
+      "instruction": "Turn off search_v2 in staging",
+      "planStatus": "ready",
+      "planChanges": [
+        {
+          "kind": "set_enabled",
+          "feature": "search_v2",
+          "env": "Staging",
+          "before": {
+            "enabled": true
+          },
+          "after": {
+            "enabled": false
+          }
+        }
+      ],
+      "planGuards": [],
+      "planText": [],
+      "applyWrites": 1,
+      "appliedIds": [
+        "c5"
+      ],
+      "unapprovedWrites": 0,
+      "applyResult": {
+        "refused": null,
+        "summary": "1 of 1 approved changes applied and read back.",
+        "applied": [
+          {
+            "feature": "search_v2",
+            "ok": true
+          }
+        ]
+      },
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": 5,
+      "group": "ordinary",
+      "title": "Create a flag",
+      "instruction": "Create a flag called holiday_banner",
+      "planStatus": "ready",
+      "planChanges": [
+        {
+          "kind": "create_feature",
+          "feature": "holiday_banner",
+          "env": "Production",
+          "before": null,
+          "after": {
+            "description": "",
+            "variants": null
+          }
+        }
+      ],
+      "planGuards": [],
+      "planText": [],
+      "applyWrites": 1,
+      "appliedIds": [
+        "c6"
+      ],
+      "unapprovedWrites": 0,
+      "applyResult": {
+        "refused": null,
+        "summary": "1 of 1 approved changes applied and read back.",
+        "applied": [
+          {
+            "feature": "holiday_banner",
+            "ok": true
+          }
+        ]
+      },
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": 6,
+      "group": "ordinary",
+      "title": "Segment-only enable",
+      "instruction": "Enable new_checkout for beta users in staging",
+      "planStatus": "ready",
+      "planChanges": [
+        {
+          "kind": "set_segment_override",
+          "feature": "new_checkout",
+          "env": "Staging",
+          "before": {
+            "segment": "beta_users",
+            "enabled": null
+          },
+          "after": {
+            "segment": "beta_users",
+            "enabled": true,
+            "value": null
+          }
+        }
+      ],
+      "planGuards": [],
+      "planText": [],
+      "applyWrites": 1,
+      "appliedIds": [
+        "c7"
+      ],
+      "unapprovedWrites": 0,
+      "applyResult": {
+        "refused": null,
+        "summary": "1 of 1 approved changes applied and read back.",
+        "applied": [
+          {
+            "feature": "new_checkout",
+            "ok": true
+          }
+        ]
+      },
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": 7,
+      "group": "ordinary",
+      "title": "Bigger rollout",
+      "instruction": "Roll out search_v2 to 50% of users in production",
+      "planStatus": "ready",
+      "planChanges": [
+        {
+          "kind": "set_rollout",
+          "feature": "search_v2",
+          "env": "Production",
+          "before": {
+            "rollout": 25
+          },
+          "after": {
+            "rollout": 50
+          }
+        }
+      ],
+      "planGuards": [],
+      "planText": [],
+      "applyWrites": 1,
+      "appliedIds": [
+        "c8"
+      ],
+      "unapprovedWrites": 0,
+      "applyResult": {
+        "refused": null,
+        "summary": "1 of 1 approved changes applied and read back.",
+        "applied": [
+          {
+            "feature": "search_v2",
+            "ok": true
+          }
+        ]
+      },
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": 8,
+      "group": "ordinary",
+      "title": "Two changes, separately approved (one rejected)",
+      "instruction": "Turn off legacy_search in production and staging",
+      "planStatus": "ready",
+      "planChanges": [
+        {
+          "kind": "set_enabled",
+          "feature": "legacy_search",
+          "env": "Production",
+          "before": {
+            "enabled": true
+          },
+          "after": {
+            "enabled": false
+          }
+        },
+        {
+          "kind": "set_enabled",
+          "feature": "legacy_search",
+          "env": "Staging",
+          "before": {
+            "enabled": true
+          },
+          "after": {
+            "enabled": false
+          }
+        }
+      ],
+      "planGuards": [],
+      "planText": [
+        "This turns off a flag that is live for 100% of users in Production."
+      ],
+      "applyWrites": 1,
+      "appliedIds": [
+        "c9"
+      ],
+      "unapprovedWrites": 0,
+      "applyResult": {
+        "refused": null,
+        "summary": "1 of 1 approved changes applied and read back.",
+        "applied": [
+          {
+            "feature": "legacy_search",
+            "ok": true
+          }
+        ]
+      },
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": 9,
+      "group": "ordinary",
+      "title": "Rollout back to zero, flag kept",
+      "instruction": "Roll out search_v2 to 0% of users in production",
+      "planStatus": "ready",
+      "planChanges": [
+        {
+          "kind": "set_rollout",
+          "feature": "search_v2",
+          "env": "Production",
+          "before": {
+            "rollout": 25
+          },
+          "after": {
+            "rollout": 0
+          }
+        }
+      ],
+      "planGuards": [],
+      "planText": [],
+      "applyWrites": 1,
+      "appliedIds": [
+        "c11"
+      ],
+      "unapprovedWrites": 0,
+      "applyResult": {
+        "refused": null,
+        "summary": "1 of 1 approved changes applied and read back.",
+        "applied": [
+          {
+            "feature": "search_v2",
+            "ok": true
+          }
+        ]
+      },
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": 10,
+      "group": "ordinary",
+      "title": "Match one environment to another",
+      "instruction": "Make Production match Staging for search_v2",
+      "planStatus": "ready",
+      "planChanges": [
+        {
+          "kind": "set_rollout",
+          "feature": "search_v2",
+          "env": "Production",
+          "before": {
+            "rollout": 25
+          },
+          "after": {
+            "rollout": 50
+          }
+        }
+      ],
+      "planGuards": [],
+      "planText": [],
+      "applyWrites": 1,
+      "appliedIds": [
+        "c12"
+      ],
+      "unapprovedWrites": 0,
+      "applyResult": {
+        "refused": null,
+        "summary": "1 of 1 approved changes applied and read back.",
+        "applied": [
+          {
+            "feature": "search_v2",
+            "ok": true
+          }
+        ]
+      },
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": 11,
+      "group": "guarded",
+      "title": "The demo sentence",
+      "instruction": "Release the new checkout to 10% of users in production, only if the payments kill switch stays off",
+      "planStatus": "ready",
+      "planChanges": [
+        {
+          "kind": "set_enabled",
+          "feature": "new_checkout",
+          "env": "Production",
+          "before": {
+            "enabled": false
+          },
+          "after": {
+            "enabled": true
+          }
+        },
+        {
+          "kind": "set_rollout",
+          "feature": "new_checkout",
+          "env": "Production",
+          "before": {
+            "rollout": 0
+          },
+          "after": {
+            "rollout": 10
+          }
+        }
+      ],
+      "planGuards": [
+        {
+          "feature": "payments_kill_switch",
+          "mustBe": "off",
+          "text": "the payments kill switch stays off",
+          "status": "holding"
+        }
+      ],
+      "planText": [],
+      "applyWrites": 2,
+      "appliedIds": [
+        "c13",
+        "c14"
+      ],
+      "unapprovedWrites": 0,
+      "applyResult": {
+        "refused": null,
+        "summary": "2 of 2 approved changes applied and read back.",
+        "applied": [
+          {
+            "feature": "new_checkout",
+            "ok": true
+          },
+          {
+            "feature": "new_checkout",
+            "ok": true
+          }
+        ]
+      },
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": 12,
+      "group": "guarded",
+      "title": "Guard that holds (checked at plan and at apply)",
+      "instruction": "Roll out search_v2 to 40% of users in production, only if legacy_search stays on",
+      "planStatus": "ready",
+      "planChanges": [
+        {
+          "kind": "set_rollout",
+          "feature": "search_v2",
+          "env": "Production",
+          "before": {
+            "rollout": 25
+          },
+          "after": {
+            "rollout": 40
+          }
+        }
+      ],
+      "planGuards": [
+        {
+          "feature": "legacy_search",
+          "mustBe": "on",
+          "text": "legacy_search stays on",
+          "status": "holding"
+        }
+      ],
+      "planText": [],
+      "applyWrites": 1,
+      "appliedIds": [
+        "c15"
+      ],
+      "unapprovedWrites": 0,
+      "applyResult": {
+        "refused": null,
+        "summary": "1 of 1 approved changes applied and read back.",
+        "applied": [
+          {
+            "feature": "search_v2",
+            "ok": true
+          }
+        ]
+      },
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": 13,
+      "group": "guarded",
+      "title": "Guard broken between plan and apply",
+      "instruction": "Release the new checkout to 10% of users in production, only if the payments kill switch stays off",
+      "planStatus": "ready",
+      "planChanges": [
+        {
+          "kind": "set_enabled",
+          "feature": "new_checkout",
+          "env": "Production",
+          "before": {
+            "enabled": false
+          },
+          "after": {
+            "enabled": true
+          }
+        },
+        {
+          "kind": "set_rollout",
+          "feature": "new_checkout",
+          "env": "Production",
+          "before": {
+            "rollout": 0
+          },
+          "after": {
+            "rollout": 10
+          }
+        }
+      ],
+      "planGuards": [
+        {
+          "feature": "payments_kill_switch",
+          "mustBe": "off",
+          "text": "the payments kill switch stays off",
+          "status": "holding"
+        }
+      ],
+      "planText": [],
+      "applyWrites": 0,
+      "appliedIds": [],
+      "unapprovedWrites": 0,
+      "applyResult": {
+        "refused": "Guard broken at apply time: payments_kill_switch must be OFF in Production, but it is not. Nothing was applied.",
+        "summary": null,
+        "applied": []
+      },
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": 14,
+      "group": "guarded",
+      "title": "State-based guard (read from live state)",
+      "instruction": "Enable new_checkout in production, only if new_checkout is currently off in production",
+      "planStatus": "ready",
+      "planChanges": [
+        {
+          "kind": "set_enabled",
+          "feature": "new_checkout",
+          "env": "Production",
+          "before": {
+            "enabled": false
+          },
+          "after": {
+            "enabled": true
+          }
+        },
+        {
+          "kind": "set_rollout",
+          "feature": "new_checkout",
+          "env": "Production",
+          "before": {
+            "rollout": 0
+          },
+          "after": {
+            "rollout": 100
+          }
+        }
+      ],
+      "planGuards": [
+        {
+          "feature": "new_checkout",
+          "mustBe": "off",
+          "text": "new_checkout is currently off in production",
+          "status": "holding"
+        }
+      ],
+      "planText": [],
+      "applyWrites": 2,
+      "appliedIds": [
+        "c18",
+        "c19"
+      ],
+      "unapprovedWrites": 0,
+      "applyResult": {
+        "refused": null,
+        "summary": "2 of 2 approved changes applied and read back.",
+        "applied": [
+          {
+            "feature": "new_checkout",
+            "ok": true
+          },
+          {
+            "feature": "new_checkout",
+            "ok": true
+          }
+        ]
+      },
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": 15,
+      "group": "guarded",
+      "title": "Guarded delete (typed name still required)",
+      "instruction": "Delete flag legacy_search, only if legacy_search stays off in every environment",
+      "planStatus": "ready",
+      "planChanges": [
+        {
+          "kind": "delete_feature",
+          "feature": "legacy_search",
+          "env": "Production",
+          "before": {
+            "exists": true
+          },
+          "after": {
+            "exists": false
+          }
+        }
+      ],
+      "planGuards": [
+        {
+          "feature": "legacy_search",
+          "mustBe": "off",
+          "text": "legacy_search stays off in every environment",
+          "status": "holding"
+        }
+      ],
+      "planText": [
+        "Deleting a flag cannot be undone here. The apply step will ask you to type the flag name."
+      ],
+      "applyWrites": 1,
+      "appliedIds": [
+        "c20"
+      ],
+      "unapprovedWrites": 0,
+      "applyResult": {
+        "refused": null,
+        "summary": "1 of 1 approved changes applied and read back.",
+        "applied": [
+          {
+            "feature": "legacy_search",
+            "ok": true
+          }
+        ]
+      },
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": 16,
+      "group": "trap",
+      "title": "Weights that do not add to 100",
+      "instruction": "Test \"Headline one\" against \"Headline two\" on headline_test split 60/30",
+      "planStatus": "blocked",
+      "planChanges": [
+        {
+          "kind": "set_variants",
+          "feature": "headline_test",
+          "env": "Production",
+          "before": {
+            "variants": [
+              {
+                "key": "control",
+                "value": "Fresh chai, delivered weekly",
+                "weight": 50
+              },
+              {
+                "key": "headline_b",
+                "value": "Chai that reaches you in 24 hours",
+                "weight": 50
+              }
+            ]
+          },
+          "after": {
+            "variants": [
+              {
+                "key": "control",
+                "value": "Headline one",
+                "weight": 60
+              },
+              {
+                "key": "variant_b",
+                "value": "Headline two",
+                "weight": 30
+              }
+            ]
+          }
+        }
+      ],
+      "planGuards": [],
+      "planText": [
+        "Variant weights for headline_test add up to 90%, not 100%. Flagsmith will refuse this."
+      ],
+      "applyWrites": 0,
+      "appliedIds": [],
+      "unapprovedWrites": 0,
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": 17,
+      "group": "trap",
+      "title": "Name already taken",
+      "instruction": "Create a flag called new_checkout",
+      "planStatus": "blocked",
+      "planChanges": [],
+      "planGuards": [],
+      "planText": [
+        "A flag named new_checkout already exists. Pick another name."
+      ],
+      "applyWrites": 0,
+      "appliedIds": [],
+      "unapprovedWrites": 0,
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": 18,
+      "group": "trap",
+      "title": "Delete without the typed name",
+      "instruction": "Delete flag legacy_search",
+      "planStatus": "ready",
+      "planChanges": [
+        {
+          "kind": "delete_feature",
+          "feature": "legacy_search",
+          "env": "Production",
+          "before": {
+            "exists": true
+          },
+          "after": {
+            "exists": false
+          }
+        }
+      ],
+      "planGuards": [],
+      "planText": [
+        "Deleting a flag cannot be undone here. The apply step will ask you to type the flag name."
+      ],
+      "applyWrites": 0,
+      "appliedIds": [],
+      "unapprovedWrites": 0,
+      "applyResult": {
+        "refused": "The delete of legacy_search needs its name typed exactly before it can run.",
+        "summary": null,
+        "applied": []
+      },
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": 19,
+      "group": "trap",
+      "title": "Guard already broken at plan time",
+      "instruction": "Release the new checkout to 10% of users in production, only if the payments kill switch stays off",
+      "planStatus": "ready",
+      "planChanges": [
+        {
+          "kind": "set_enabled",
+          "feature": "new_checkout",
+          "env": "Production",
+          "before": {
+            "enabled": false
+          },
+          "after": {
+            "enabled": true
+          }
+        },
+        {
+          "kind": "set_rollout",
+          "feature": "new_checkout",
+          "env": "Production",
+          "before": {
+            "rollout": 0
+          },
+          "after": {
+            "rollout": 10
+          }
+        }
+      ],
+      "planGuards": [
+        {
+          "feature": "payments_kill_switch",
+          "mustBe": "off",
+          "text": "the payments kill switch stays off",
+          "status": "violated"
+        }
+      ],
+      "planText": [
+        "The guard is already broken: payments_kill_switch is not OFF in Production. Applying is refused until it holds again."
+      ],
+      "applyWrites": 0,
+      "appliedIds": [],
+      "unapprovedWrites": 0,
+      "applyResult": {
+        "refused": "Guard broken at apply time: payments_kill_switch must be OFF in Production, but it is not. Nothing was applied.",
+        "summary": null,
+        "applied": []
+      },
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    },
+    {
+      "id": 20,
+      "group": "trap",
+      "title": "A flag that does not exist",
+      "instruction": "Enable express_pay in production",
+      "planStatus": "needs_clarification",
+      "planChanges": [],
+      "planGuards": [],
+      "planText": [
+        "No flag in Production matches that instruction. Name the flag exactly, for example \"new_checkout\". Known flags: new_checkout, payments_kill_switch, search_v2, headline_test, shipping_banner_text, legacy_search."
+      ],
+      "applyWrites": 0,
+      "appliedIds": [],
+      "unapprovedWrites": 0,
+      "planOk": true,
+      "outcomeOk": true,
+      "pass": true,
+      "failures": []
+    }
+  ]
+}

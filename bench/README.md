@@ -57,3 +57,29 @@ as misses:
 - **Case 10 (match one environment to another):** the planner answers
   "needs clarification" — cross-environment matching is not a planning
   skill it has. A capability gap, recorded as a miss.
+
+## Rehearsal round 2 — 25 Nov 2026 (MOCK, demo project)
+
+The three misses above were settled the same day, before the window, and
+re-run: **plans correct 20/20 · traps caught 5/5 · unapproved writes 0**,
+with planner tests 20/20 and adapter tests 9/9 unedited. Full record:
+`RESULTS_MOCK_R2_2026-11-25.md` and `results-mock-r2-2026-11-25.json`.
+The R1 record above stands as it was; this is what changed and why:
+
+- **Case 1 — the case was corrected, not the code.** The product's
+  "enable" is documented as *fully on* (enabled + rollout 100%) and its
+  own tests pin that meaning, so on the seed's off-at-0% starting state
+  the correct plan is two changes. The case now expects that, with the
+  reason written at the case in `cases.js`. The "product decision" is
+  settled: the two-change enable stays.
+- **Case 8 — the planner was fixed.** The clarification rule covers
+  several flags or operations in one sentence; one flag named for two
+  environments is not that. Plain on/off instructions now plan one
+  tickable change per named environment instead of silently dropping
+  all but the first.
+- **Case 10 — the planner was fixed.** "Make \<env\> match \<env\> for
+  \<flag\>" now plans the state diff between the two environments, one
+  tickable change per differing field, guards still enforced.
+
+Still a rehearsal: these numbers are not the bench score and are never
+quoted as one. The scored run is the live-page run on the real project.

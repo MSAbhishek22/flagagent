@@ -53,6 +53,46 @@
     return hit;
   }
 
+  /* Every environment the instruction names outright ("in production",
+     "and staging", "prod"), in the order named. findEnv picks one target;
+     this list is what lets a plain on/off instruction plan the same change
+     in each named environment instead of silently dropping all but one. */
+  function findNamedEnvs(text, snapshot) {
+    var lower = text.toLowerCase();
+    var hits = [];
+    snapshot.environments.forEach(function (env) {
+      var n = env.name.toLowerCase();
+      var idx = -1;
+      ['in ' + n, 'on ' + n, 'and ' + n].forEach(function (p) {
+        var i = lower.indexOf(p);
+        if (i !== -1 && (idx === -1 || i < idx)) idx = i;
+      });
+      if (n === 'production') { var mp = lower.search(/\bprod\b/); if (mp !== -1 && (idx === -1 || mp < idx)) idx = mp; }
+      if (n === 'development') { var md = lower.search(/\bdev\b/); if (md !== -1 && (idx === -1 || md < idx)) idx = md; }
+      if (idx !== -1) hits.push({ env: env, idx: idx });
+    });
+    hits.sort(function (a, b) { return a.idx - b.idx; });
+    return hits.map(function (h) { return h.env; });
+  }
+
+  function envByWord(word, snapshot) {
+    var w = String(word || '').toLowerCase();
+    var hit = null;
+    snapshot.environments.forEach(function (env) {
+      if (env.name.toLowerCase() === w) hit = env;
+      if (w === 'prod' && env.name === 'Production') hit = env;
+      if (w === 'dev' && env.name === 'Development') hit = env;
+    });
+    return hit;
+  }
+
+  function stateInEnv(snapshot, envId, featureName) {
+    var list = snapshot.featuresByEnv[envId] || [];
+    var found = null;
+    list.forEach(function (f) { if (f.name === featureName) found = f.state; });
+    return found;
+  }
+
   function splitGuard(text) {
     var m = text.match(/^(.*?)[,;]?\s+(only if|as long as|provided that|unless)\s+(.+)$/i);
     if (!m) return { main: text, guardText: null, guardJoin: null };
@@ -170,6 +210,66 @@
     var feature = hit.feature;
     var st = feature.state;
 
+    /* ---- match one environment to another ----
+       "Make Production match Staging for <flag>": the plan is the diff —
+       one tickable change per state field that differs, so after applying,
+       the target environment's state for this flag equals the source's.
+       Guards parsed above still apply, and the executor re-checks them at
+       apply time against the target environment. */
+    var matchM = main.match(/\bmake\s+([a-z]+)\s+match\s+([a-z]+)\b/i);
+    if (matchM) {
+      var targetEnv = envByWord(matchM[1], snapshot);
+      var sourceEnv = envByWord(matchM[2], snapshot);
+      if (!targetEnv || !sourceEnv || targetEnv.id === sourceEnv.id) {
+        plan.status = 'needs_clarification';
+        plan.errors.push('Matching needs two different environments, named plainly: "Make Production match Staging for ' + feature.name + '".');
+        return finish(plan);
+      }
+      plan.assumptions = plan.assumptions.filter(function (a) { return a.indexOf('No environment was named') !== 0; });
+      plan.envId = targetEnv.id; plan.envName = targetEnv.name;
+      var tgtState = stateInEnv(snapshot, targetEnv.id, feature.name);
+      var srcState = stateInEnv(snapshot, sourceEnv.id, feature.name);
+      if (!tgtState || !srcState) {
+        plan.status = 'blocked';
+        plan.errors.push(feature.name + ' is not present in both ' + targetEnv.name + ' and ' + sourceEnv.name + ', so there is nothing to match.');
+        return finish(plan);
+      }
+      if (plan.guards.length && plan.guards[0].feature && plan.guards[0].mustBe) {
+        var gState = stateInEnv(snapshot, targetEnv.id, plan.guards[0].feature);
+        if (gState) plan.guards[0].status = plan.guards[0].mustBe === 'off'
+          ? (gState.enabled ? 'violated' : 'holding')
+          : (gState.enabled ? 'holding' : 'violated');
+      }
+      if (tgtState.enabled !== srcState.enabled) {
+        plan.changes.push(change('set_enabled', targetEnv, feature.name,
+          { enabled: tgtState.enabled }, { enabled: srcState.enabled },
+          targetEnv.name + ' · ' + feature.name + ': ' + onOff(tgtState.enabled) + ' → ' + onOff(srcState.enabled) + ' (to match ' + sourceEnv.name + ')',
+          !srcState.enabled && targetEnv.name === 'Production' && tgtState.rollout > 0 ? { caution: true } : null));
+        if (!srcState.enabled && targetEnv.name === 'Production' && tgtState.rollout > 0)
+          plan.warnings.push('Matching ' + sourceEnv.name + ' turns off a flag that is live for ' + tgtState.rollout + '% of users in Production.');
+      }
+      if (tgtState.rollout !== srcState.rollout) {
+        plan.changes.push(change('set_rollout', targetEnv, feature.name,
+          { rollout: tgtState.rollout }, { rollout: srcState.rollout },
+          targetEnv.name + ' · ' + feature.name + ': rollout ' + tgtState.rollout + '% → ' + srcState.rollout + '% (to match ' + sourceEnv.name + ')'));
+      }
+      if (tgtState.value !== srcState.value) {
+        plan.changes.push(change('set_value', targetEnv, feature.name,
+          { value: tgtState.value }, { value: srcState.value },
+          targetEnv.name + ' · ' + feature.name + ': value ' + JSON.stringify(tgtState.value) + ' → ' + JSON.stringify(srcState.value) + ' (to match ' + sourceEnv.name + ')'));
+      }
+      if (JSON.stringify(tgtState.variants || null) !== JSON.stringify(srcState.variants || null)) {
+        plan.changes.push(change('set_variants', targetEnv, feature.name,
+          { variants: tgtState.variants },
+          { variants: srcState.variants ? srcState.variants.map(function (v) { return { key: v.key, value: v.value, weight: v.weight }; }) : null },
+          targetEnv.name + ' · ' + feature.name + ': variants → the ' + sourceEnv.name + ' set (to match ' + sourceEnv.name + ')'));
+      }
+      if ((tgtState.segmentOverrides || []).length || (srcState.segmentOverrides || []).length)
+        plan.assumptions.push('Segment overrides on ' + feature.name + ' are not copied by matching; only the general state is matched.');
+      if (!plan.changes.length) plan.warnings.push(feature.name + ' in ' + targetEnv.name + ' already matches ' + sourceEnv.name + '.');
+      return finish(plan);
+    }
+
     var pctMatch = main.match(/(\d{1,3})\s*(?:%|percent)/);
     var pct = pctMatch ? parseInt(pctMatch[1], 10) : null;
     var wantsVariants = /\b(test|experiment|variants?|a\/b)\b/.test(lower) || /\bsplit\s+\d+\s*\/\s*\d+/.test(lower);
@@ -232,21 +332,39 @@
       return finish(plan);
     }
 
-    /* ---- plain enable / disable ---- */
+    /* ---- plain enable / disable ----
+       One flag, one operation — but if the instruction names several
+       environments ("turn off X in production and staging"), the change
+       is planned in each of them, one tickable change per environment.
+       That is not a compound instruction: the documented clarification
+       rule covers several flags or operations in one sentence, not one
+       flag named for two environments. Dropping the second environment
+       silently, as the planner used to, is the one outcome neither the
+       rule nor the plan allows. */
+    var namedEnvs = findNamedEnvs(main, snapshot);
+    var targetEnvs = namedEnvs.length > 1 ? namedEnvs : [env];
     if (wantsDisable && !wantsEnable) {
-      if (!st.enabled) { plan.warnings.push(feature.name + ' is already OFF in ' + env.name + '.'); return finish(plan); }
-      plan.changes.push(change('set_enabled', env, feature.name, { enabled: true }, { enabled: false },
-        env.name + ' · ' + feature.name + ': ON (' + st.rollout + '%) → OFF',
-        env.name === 'Production' && st.rollout > 0 ? { caution: true } : null));
-      if (env.name === 'Production' && st.rollout > 0) plan.warnings.push('This turns off a flag that is live for ' + st.rollout + '% of users in Production.');
+      targetEnvs.forEach(function (e) {
+        var s = stateInEnv(snapshot, e.id, feature.name);
+        if (!s) { plan.warnings.push('There is no flag named ' + feature.name + ' in ' + e.name + ', so nothing was planned there.'); return; }
+        if (!s.enabled) { plan.warnings.push(feature.name + ' is already OFF in ' + e.name + '.'); return; }
+        plan.changes.push(change('set_enabled', e, feature.name, { enabled: true }, { enabled: false },
+          e.name + ' · ' + feature.name + ': ON (' + s.rollout + '%) → OFF',
+          e.name === 'Production' && s.rollout > 0 ? { caution: true } : null));
+        if (e.name === 'Production' && s.rollout > 0) plan.warnings.push('This turns off a flag that is live for ' + s.rollout + '% of users in Production.');
+      });
       return finish(plan);
     }
     if (wantsEnable) {
-      if (st.enabled && st.rollout === 100) { plan.warnings.push(feature.name + ' is already fully ON in ' + env.name + '.'); return finish(plan); }
-      if (!st.enabled) plan.changes.push(change('set_enabled', env, feature.name, { enabled: false }, { enabled: true },
-        env.name + ' · ' + feature.name + ': OFF → ON'));
-      if (st.rollout !== 100) plan.changes.push(change('set_rollout', env, feature.name, { rollout: st.rollout }, { rollout: 100 },
-        env.name + ' · ' + feature.name + ': rollout ' + st.rollout + '% → 100%'));
+      targetEnvs.forEach(function (e) {
+        var s = stateInEnv(snapshot, e.id, feature.name);
+        if (!s) { plan.warnings.push('There is no flag named ' + feature.name + ' in ' + e.name + ', so nothing was planned there.'); return; }
+        if (s.enabled && s.rollout === 100) { plan.warnings.push(feature.name + ' is already fully ON in ' + e.name + '.'); return; }
+        if (!s.enabled) plan.changes.push(change('set_enabled', e, feature.name, { enabled: false }, { enabled: true },
+          e.name + ' · ' + feature.name + ': OFF → ON'));
+        if (s.rollout !== 100) plan.changes.push(change('set_rollout', e, feature.name, { rollout: s.rollout }, { rollout: 100 },
+          e.name + ' · ' + feature.name + ': rollout ' + s.rollout + '% → 100%'));
+      });
       return finish(plan);
     }
 

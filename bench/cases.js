@@ -34,13 +34,28 @@ var DEMO = 'Release the new checkout to 10% of users in production, only if the 
 
 var CASES = [
   /* ---------- Ordinary rollouts and flag changes (1–10) ---------- */
+  /* Case 1 corrected 25 Nov 2026 (R2) — the case was wrong, the planner
+     was not. The build plan's "plan exactly one change — off → on" holds
+     for a flag whose rollout already sits at 100%, the normal off state.
+     But this bench runs against the seed project, where new_checkout in
+     Production starts off at 0% (the demo sentence needs 0% to release
+     from), and the product's documented meaning of "enable" is FULLY on:
+     enabled plus rollout 100%. That meaning is pinned by the planner's
+     own tests ("enable in staging raises a half-on flag to full"), by
+     the verified live demo flow ("new_checkout OFF to ON, rollout 0% to
+     100%" as one instruction's plan), and by the v2 doc's demo, which
+     approves enabled and rollout as two separate tickable changes. An
+     enable that left rollout at 0% would switch the flag on for nobody.
+     So on this starting state the correct plan is two changes, and the
+     case now expects exactly that. Full record: RESULTS_MOCK_R2_2026-11-25.md. */
   { id: 1, group: 'ordinary', title: 'Turn a flag on',
     instruction: 'Enable new_checkout in production',
     approve: 'all', typed: 'auto',
     expect: { plan: { status: 'ready', changes: [
-                { kind: 'set_enabled', feature: 'new_checkout', env: 'Production', afterEnabled: true } ] },
+                { kind: 'set_enabled', feature: 'new_checkout', env: 'Production', afterEnabled: true },
+                { kind: 'set_rollout', feature: 'new_checkout', env: 'Production', afterRollout: 100 } ] },
               apply: 'applied',
-              final: [ { env: 'Production', feature: 'new_checkout', enabled: true } ] } },
+              final: [ { env: 'Production', feature: 'new_checkout', enabled: true, rollout: 100 } ] } },
 
   { id: 2, group: 'ordinary', title: 'Rollout to a percentage',
     instruction: 'Roll out search_v2 to 10% of users in production',
