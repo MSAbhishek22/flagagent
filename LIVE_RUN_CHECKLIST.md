@@ -44,7 +44,8 @@ From KEY_HOOKUP.md. All four must pass; record what you actually saw.
       Record: number of flags seen ___ · first flag name ___
 - [ ] **Raw response check.** Fetch one feature-state list and compare
       field names with `RealAdapter._normaliseState`:
-      `curl -s -H "Authorization: Api-Key <key>" https://api.flagsmith.com/api/v1/environments/<envId>/featurestates/ | head -c 2000`
+      `curl -s -H "Authorization: Api-Key <key>" https://api.flagsmith.com/api/v1/environments/<envApiKey>/featurestates/ | head -c 2000`
+      (the segment is the environment's api_key, not its numeric id — a numeric id gets a 403)
       Record: **A1** rollout field name seen ___ · **A2** multivariate
       weights field seen ___ · environment versioning **v1 / v2** ___
       If a field differs, patch the normaliser and the `set_rollout`

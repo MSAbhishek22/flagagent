@@ -137,6 +137,7 @@
     this.projectName = config.projectName || ('Flagsmith project ' + config.projectId);
     this._key = config.apiKey || ''; // memory only; never logged, never returned
     this._envCache = null;
+    this._envKeys = {}; // envId -> environment api_key, learned by listEnvironments; memory only, never returned
     this._stateIds = {}; // "envId:featureName" -> feature state id, learned on read
   }
   RealAdapter.prototype._fetch = function (path, options) {
@@ -158,9 +159,28 @@
     var self = this;
     if (this._envCache) return Promise.resolve(clone(this._envCache));
     return this._fetch('/projects/' + this.projectId + '/environments/').then(function (data) {
-      var list = (data.results || data || []).map(function (e) { return { id: String(e.id), name: e.name }; });
+      var list = (data.results || data || []).map(function (e) {
+        // The featurestates endpoints address an environment by its
+        // api_key, not its numeric id (see _envApiKey), so keep the key
+        // alongside the id — inside the adapter only, never in the
+        // returned list.
+        if (e.api_key) self._envKeys[String(e.id)] = e.api_key;
+        return { id: String(e.id), name: e.name };
+      });
       self._envCache = list;
       return clone(list);
+    });
+  };
+  RealAdapter.prototype._envApiKey = function (envId) {
+    // The Management API has no /environments/{numeric id}/featurestates/
+    // route (verified against the live swagger, 25 Nov 2026): the list and
+    // write paths are /environments/{environment_api_key}/featurestates/.
+    // Addressing them by numeric id makes the API answer 403.
+    var self = this;
+    if (this._envKeys[envId]) return Promise.resolve(this._envKeys[envId]);
+    return this.listEnvironments().then(function () {
+      if (self._envKeys[envId]) return self._envKeys[envId];
+      throw new Error('Flagsmith returned no api_key for environment ' + envId + '; cannot read its feature states.');
     });
   };
   RealAdapter.prototype.listSegments = function () {
@@ -190,10 +210,12 @@
   };
   RealAdapter.prototype.listFeatures = function (envId) {
     var self = this;
-    return Promise.all([
-      this._fetch('/projects/' + this.projectId + '/features/'),
-      this._fetch('/environments/' + envId + '/featurestates/')
-    ]).then(function (pair) {
+    return this._envApiKey(envId).then(function (envKey) {
+      return Promise.all([
+        self._fetch('/projects/' + self.projectId + '/features/'),
+        self._fetch('/environments/' + envKey + '/featurestates/')
+      ]);
+    }).then(function (pair) {
       var feats = pair[0].results || pair[0] || [];
       var states = pair[1].results || pair[1] || [];
       var byFeature = {};
@@ -252,8 +274,10 @@
       default:
         return Promise.resolve({ ok: false, detail: 'Change kind ' + change.kind + ' is not wired for the live API yet; see KEY_HOOKUP.md.' });
     }
-    return this._fetch('/environments/' + change.envId + '/featurestates/' + sid + '/', {
-      method: 'PUT', body: JSON.stringify(body)
+    return this._envApiKey(change.envId).then(function (envKey) {
+      return self._fetch('/environments/' + envKey + '/featurestates/' + sid + '/', {
+        method: 'PUT', body: JSON.stringify(body)
+      });
     }).then(function () { return { ok: true, detail: change.feature + ' updated.' }; })
       .catch(function (e) { return { ok: false, detail: e.message }; });
   };

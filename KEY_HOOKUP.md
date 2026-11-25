@@ -34,7 +34,8 @@ and add `<script src="js/config.js"></script>` immediately **before** the `js/ap
 ## The 5-minute verification script (run before the first live apply)
 1. **Read check (1 min):** Connect (Route A). The board must list the real project's flags with plausible states. If the board is empty or wrong, stop — do not apply anything.
 2. **Raw response check (2 min):** In a terminal, fetch one feature-state list and eyeball the field names against `RealAdapter._normaliseState`:
-   `curl -s -H "Authorization: Api-Key <key>" https://api.flagsmith.com/api/v1/environments/<envId>/featurestates/ | head -c 2000`
+   `curl -s -H "Authorization: Api-Key <key>" https://api.flagsmith.com/api/v1/environments/<envApiKey>/featurestates/ | head -c 2000`
+   Note the segment is the environment's **api_key** (the `api_key` field in the environments list), *not* its numeric id — the API has no numeric-id featurestates route and answers 403 to one (confirmed live, 25 Nov 2026; the adapter was patched to match).
    Confirm or fix the two marked assumptions:
    - **A1 — rollout percentage:** the normaliser reads `fs.percentage`; if the real field differs, patch `_normaliseState` and the `set_rollout` body in `applyChange` together.
    - **A2 — multivariate weights:** read from `multivariate_feature_state_values[].percentage_allocation`. Variant *writes* are not wired in the live adapter yet (it returns a clear "not wired" refusal, never a fake success) — plan variant changes in the demo project, or wire the write here after seeing a real response.
