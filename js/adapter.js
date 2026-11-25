@@ -124,11 +124,13 @@
   };
 
   /* ---------------- Real Flagsmith adapter ----------------
-     Written against the documented Management API (prep pack §2.4).
-     Field-mapping assumptions that the docs do not pin down (rollout
-     percentage on a feature state, multivariate weight writes) are
-     marked ASSUMPTION and listed in KEY_HOOKUP.md — they must be
-     confirmed against one raw API response before the live demo. */
+     Written against the documented Management API (prep pack §2.4) and
+     re-checked field-by-field against the live swagger
+     (api.flagsmith.com/api/v1/swagger.json) on 25–26 Nov 2026. The
+     write-shape facts that bit in the first live run are recorded in
+     KEY_HOOKUP.md: the featurestates PUT requires `feature`, a v1
+     feature state has no percentage field, and value writes go through
+     /features/featurestates/ with a nested feature_state_value. */
 
   function RealAdapter(config) {
     this.mode = 'LIVE';
@@ -139,6 +141,8 @@
     this._envCache = null;
     this._envKeys = {}; // envId -> environment api_key, learned by listEnvironments; memory only, never returned
     this._stateIds = {}; // "envId:featureName" -> feature state id, learned on read
+    this._rawStates = {}; // "envId:featureName" -> raw feature state object, learned on read;
+                          // write bodies are built from it so required fields survive the PUT
   }
   RealAdapter.prototype._fetch = function (path, options) {
     var self = this;
@@ -202,7 +206,11 @@
     }
     return {
       enabled: !!fs.enabled,
-      rollout: typeof fs.percentage === 'number' ? fs.percentage : (fs.enabled ? 100 : 0), // ASSUMPTION: see KEY_HOOKUP.md
+      // CONFIRMED (live swagger, 26 Nov 2026): a v1 feature state has no
+      // percentage field at all — rollout % exists only as
+      // percentage_allocation on multivariate values. For a standard flag
+      // the rollout is therefore derived: enabled -> 100, disabled -> 0.
+      rollout: typeof fs.percentage === 'number' ? fs.percentage : (fs.enabled ? 100 : 0),
       value: fs.feature_state_value != null ? fs.feature_state_value : null,
       variants: variants,
       segmentOverrides: []
@@ -223,7 +231,10 @@
         byFeature[fs.feature] = fs;
         var fname = null;
         feats.forEach(function (f) { if (f.id === fs.feature) fname = f.name; });
-        if (fname) self._stateIds[envId + ':' + fname] = fs.id;
+        if (fname) {
+          self._stateIds[envId + ':' + fname] = fs.id;
+          self._rawStates[envId + ':' + fname] = clone(fs);
+        }
       });
       return feats.map(function (f) {
         return { id: String(f.id), name: f.name,
@@ -254,6 +265,54 @@
       });
     });
   };
+  /* Write bodies are built from the raw feature state the read path
+     fetched, projected onto the writable fields of the target
+     serializer — never assembled from the change alone. The first live
+     run (25 Nov 2026) sent only {enabled: ...} and every write came
+     back 400: FeatureStateSerializerBasic REQUIRES `feature`, which
+     the change-only body never carried. Two routes, per the swagger:
+       - PUT /environments/{env api_key}/featurestates/{id}/
+         (FeatureStateSerializerBasic) — enabled and multivariate
+         weights; its feature_state_value is read-only there.
+       - PUT /features/featurestates/{id}/
+         (WritableNestedFeatureState) — the value lives here, as a
+         nested {type, string_value, integer_value, boolean_value}. */
+  RealAdapter.prototype._mvBody = function (raw) {
+    var vals = raw.multivariate_feature_state_values;
+    if (!Array.isArray(vals) || !vals.length) return null;
+    var out = [];
+    for (var i = 0; i < vals.length; i++) {
+      var v = vals[i];
+      if (v.multivariate_feature_option == null || v.percentage_allocation == null) return null;
+      var item = { multivariate_feature_option: v.multivariate_feature_option,
+                   percentage_allocation: v.percentage_allocation };
+      if (v.id != null) item.id = v.id;
+      out.push(item);
+    }
+    return out;
+  };
+  RealAdapter.prototype._projectedBody = function (raw) {
+    // The writable, non-value fields shared by both write serializers.
+    var body = { feature: raw.feature, enabled: !!raw.enabled };
+    if (raw.environment != null) body.environment = raw.environment;
+    if (raw.identity != null) body.identity = raw.identity;
+    if (raw.feature_segment != null) body.feature_segment = raw.feature_segment;
+    if (raw.change_request != null) body.change_request = raw.change_request;
+    if (raw.environment_feature_version != null) body.environment_feature_version = raw.environment_feature_version;
+    if (raw.live_from != null) body.live_from = raw.live_from;
+    if (raw.identifier) body.identifier = raw.identifier;
+    var mv = this._mvBody(raw);
+    if (mv) body.multivariate_feature_state_values = mv;
+    return body;
+  };
+  RealAdapter.prototype._valueObject = function (value) {
+    // FeatureStateValue (swagger): type is one of int / unicode / bool,
+    // with the matching typed slot filled and the others null.
+    if (typeof value === 'boolean') return { type: 'bool', boolean_value: value, string_value: null, integer_value: null };
+    if (typeof value === 'number' && isFinite(value)) return { type: 'int', integer_value: Math.trunc(value), string_value: null, boolean_value: null };
+    if (value == null) return { type: 'unicode', string_value: null, integer_value: null, boolean_value: null };
+    return { type: 'unicode', string_value: String(value), integer_value: null, boolean_value: null };
+  };
   RealAdapter.prototype.applyChange = function (change) {
     var self = this;
     if (change.kind === 'create_feature') {
@@ -264,22 +323,51 @@
       }).then(function () { return { ok: true, detail: 'Flag ' + change.feature + ' created.' }; })
         .catch(function (e) { return { ok: false, detail: e.message }; });
     }
-    var sid = this._stateIds[change.envId + ':' + change.feature];
-    if (!sid) return Promise.resolve({ ok: false, detail: 'Feature state id for ' + change.feature + ' was not learned on read; refresh the board and retry.' });
-    var body = null;
+    var key = change.envId + ':' + change.feature;
+    var sid = this._stateIds[key];
+    var raw = this._rawStates[key];
+    if (!sid || !raw) return Promise.resolve({ ok: false, detail: 'Feature state for ' + change.feature + ' was not learned on read; refresh the board and retry.' });
     switch (change.kind) {
-      case 'set_enabled': body = { enabled: change.after.enabled }; break;
-      case 'set_rollout': body = { enabled: change.after.rollout > 0, percentage: change.after.rollout }; break; // ASSUMPTION: see KEY_HOOKUP.md
-      case 'set_value': body = { feature_state_value: change.after.value }; break;
+      case 'set_enabled': {
+        var enabledBody = this._projectedBody(raw);
+        enabledBody.enabled = !!change.after.enabled;
+        return this._envApiKey(change.envId).then(function (envKey) {
+          return self._fetch('/environments/' + envKey + '/featurestates/' + sid + '/', {
+            method: 'PUT', body: JSON.stringify(enabledBody)
+          });
+        }).then(function () { return { ok: true, detail: change.feature + ' is now ' + (enabledBody.enabled ? 'ON' : 'OFF') + '.' }; })
+          .catch(function (e) { return { ok: false, detail: e.message }; });
+      }
+      case 'set_rollout': {
+        var rollout = change.after.rollout;
+        if (rollout !== 0 && rollout !== 100) {
+          // A v1 feature state has no percentage field (live swagger,
+          // 26 Nov 2026): a partial rollout exists only as per-variant
+          // percentage_allocation on a multivariate flag. Refuse plainly
+          // rather than send a field the API does not have.
+          return Promise.resolve({ ok: false, detail: 'A ' + rollout + '% rollout cannot be written through the v1 API: feature states have no percentage field (rollout % lives only in multivariate variant weights). Turn the flag fully on or off, or plan a variant change.' });
+        }
+        var rolloutBody = this._projectedBody(raw);
+        rolloutBody.enabled = rollout === 100;
+        return this._envApiKey(change.envId).then(function (envKey) {
+          return self._fetch('/environments/' + envKey + '/featurestates/' + sid + '/', {
+            method: 'PUT', body: JSON.stringify(rolloutBody)
+          });
+        }).then(function () { return { ok: true, detail: change.feature + ' rollout is now ' + rollout + '%.' }; })
+          .catch(function (e) { return { ok: false, detail: e.message }; });
+      }
+      case 'set_value': {
+        var valueBody = this._projectedBody(raw);
+        if (valueBody.environment == null) valueBody.environment = parseInt(change.envId, 10);
+        valueBody.feature_state_value = this._valueObject(change.after.value);
+        return this._fetch('/features/featurestates/' + sid + '/', {
+          method: 'PUT', body: JSON.stringify(valueBody)
+        }).then(function () { return { ok: true, detail: change.feature + ' value set.' }; })
+          .catch(function (e) { return { ok: false, detail: e.message }; });
+      }
       default:
         return Promise.resolve({ ok: false, detail: 'Change kind ' + change.kind + ' is not wired for the live API yet; see KEY_HOOKUP.md.' });
     }
-    return this._envApiKey(change.envId).then(function (envKey) {
-      return self._fetch('/environments/' + envKey + '/featurestates/' + sid + '/', {
-        method: 'PUT', body: JSON.stringify(body)
-      });
-    }).then(function () { return { ok: true, detail: change.feature + ' updated.' }; })
-      .catch(function (e) { return { ok: false, detail: e.message }; });
   };
 
   function createAdapter(config, seed) {

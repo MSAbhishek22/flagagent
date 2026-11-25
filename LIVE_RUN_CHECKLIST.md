@@ -50,6 +50,11 @@ From KEY_HOOKUP.md. All four must pass; record what you actually saw.
       weights field seen ___ · environment versioning **v1 / v2** ___
       If a field differs, patch the normaliser and the `set_rollout`
       write body together, then re-run this check before any apply.
+      *(Settled from the live swagger, 26 Nov 2026: **A1** — there is
+      no rollout field on a v1 feature state; rollout is derived from
+      `enabled`. **A2** — `percentage_allocation`, confirmed. And the
+      featurestates PUT requires `feature` in the body — sending
+      `{enabled}` alone was the 25 Nov all-writes-400 failure.)*
 - [ ] **One safe write.** Plan "Enable \<a harmless test flag\> in
       Development" (create the test flag in Flagsmith first if none
       exists). Approve, apply, receipt reads back ON, same flag checked
