@@ -31,6 +31,20 @@ and add `<script src="js/config.js"></script>` immediately **before** the `js/ap
 ## How MOCK → LIVE switching works
 `createAdapter()` returns the real adapter only when `mode: 'LIVE'` **and** both `apiKey` and `projectId` are present; otherwise it returns the mock. The planner, executor, diffs, guards and receipt are the same code in both modes — only the adapter changes.
 
+## The confirmed write contract (field-by-field, live swagger 26 Nov 2026)
+
+Read off `api.flagsmith.com/api/v1/swagger.json` and diffed against every key `RealAdapter._projectedBody` can emit. The write tests (`tests/adapter-write.test.js`) assert this contract.
+
+**PUT /environments/{environment_api_key}/featurestates/{id}/ — FeatureStateSerializerBasic.** Required: `feature` (integer).
+- Writable: `feature` (integer), `enabled` (boolean), `environment` (integer|null), `identity` (integer|null), `feature_segment` (integer|null), `change_request` (integer|null), `environment_feature_version` (uuid string|null), `live_from` (date-time string|null), `identifier` (string), `multivariate_feature_state_values` (items: `multivariate_feature_option` integer + `percentage_allocation` number, both required; the item `id` is marked read-only in the shared schema — DRF ignores read-only input, and Flagsmith's nested update matches existing values by it, so fetched ids are carried through).
+- Read-only, never sent: `id`, `uuid`, `version`, `created_at`, `updated_at`, `deleted_at`, `feature_state_value` (a read-only scalar on this route).
+
+**PUT /features/featurestates/{id}/ — WritableNestedFeatureState.** Required: `environment` + `feature`. The same writable/read-only split as above, except `feature_state_value` is writable here as the nested object `{type: int | unicode | bool, string_value, integer_value, boolean_value}`.
+
+**The read shape is not the write shape.** The featurestates LIST answers with FeatureStateSerializerWithIdentity: the same key names, but `identity` arrives as a nested object `{id, identifier}`, not the integer the write serializers want. The projection therefore coerces every integer-typed field (`feature`, `environment`, `identity`, `feature_segment`, `change_request`) to a real integer — an identity object contributes its `id` — and drops anything it cannot coerce, instead of sending a wrong-typed value. Any other key a list item carries beyond the serializer's fields is likewise never copied. Audit outcome: every key the projection emitted was already inside the writable set and no read-only key leaked; the one wrong-type risk was `identity`, closed by the coercion.
+
+**Errors carry the API's words.** A non-OK response's body (whitespace-collapsed, trimmed to 300 chars) is appended to the error the receipt shows, so a failed write names the field Flagsmith rejected instead of a bare status. And `index.html` loads the adapter with a `?v=` cache-bust query, so a fixed adapter is never masked by a browser-cached old one.
+
 ## The 5-minute verification script (run before the first live apply)
 1. **Read check (1 min):** Connect (Route A). The board must list the real project's flags with plausible states. If the board is empty or wrong, stop — do not apply anything.
 2. **Raw response check (2 min):** In a terminal, fetch one feature-state list and eyeball the field names against `RealAdapter._normaliseState`:
@@ -48,4 +62,4 @@ and add `<script src="js/config.js"></script>` immediately **before** the `js/ap
 ## If something fails
 - **401/403:** the key is wrong, revoked, or not an *Organisation* key (project/environment keys will not work for the Management API).
 - **CORS error in the browser console:** the Management API may refuse browser-origin calls from the Pages domain. Fallback: run the same page from `localhost` (any static server) — the adapter and flow are unchanged — or front the API with the Flagsmith MCP server (`https://mcp.flagsmith.com`, same Api-Key auth) in a later iteration.
-- **Board reads fine, writes fail with 400:** the write body is missing something the serializer requires — `feature` first of all (that was the 25 Nov 2026 failure). After that, check A1/A2 and v2 versioning above. The receipt will show the API's error text; nothing is ever reported as applied unless the read-back matches.
+- **Board reads fine, writes fail with 400:** the write body is missing something the serializer requires — `feature` first of all (that was the 25 Nov 2026 failure). After that, check the write contract above (the `identity` type trap especially), A1/A2 and v2 versioning. Since round 3 the receipt shows the API's own error body text, so the failing field is named on the page; nothing is ever reported as applied unless the read-back matches.

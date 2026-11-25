@@ -152,7 +152,19 @@
       'Content-Type': 'application/json'
     });
     return fetch(self.base + path, options).then(function (res) {
-      if (!res.ok) throw new Error('Flagsmith API ' + res.status + ' on ' + path);
+      if (!res.ok) {
+        // Surface the API's own words: a 400 body names the field that
+        // failed validation, which a bare status never does (the first
+        // live write runs failed blind for exactly this reason). The
+        // body is validation text only — request headers and the key
+        // are never read into the error. Some fetch stubs have no
+        // text(); fall back to the bare status there.
+        var read = (typeof res.text === 'function') ? res.text() : Promise.resolve('');
+        return read.then(function (text) {
+          var body = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+          throw new Error('Flagsmith API ' + res.status + ' on ' + path + (body ? ' — ' + body : ''));
+        });
+      }
       return res.status === 204 ? null : res.json();
     });
   };
@@ -291,13 +303,40 @@
     }
     return out;
   };
+  RealAdapter.prototype._intField = function (v) {
+    // The write serializers type feature / environment / identity /
+    // feature_segment / change_request as integers, but the read shape
+    // does not always hand them back as numbers: the featurestates LIST
+    // answers with FeatureStateSerializerWithIdentity, whose `identity`
+    // is a nested {id, identifier} object where the write serializer
+    // wants the integer id or null (live swagger, 26 Nov 2026). Coerce
+    // what is safely coercible — an object contributes its numeric id —
+    // and drop the rest rather than send a wrong-typed value (a 400).
+    if (typeof v === 'number' && isFinite(v)) return Math.trunc(v);
+    if (v && typeof v === 'object' && typeof v.id === 'number' && isFinite(v.id)) return Math.trunc(v.id);
+    if (typeof v === 'string' && /^-?\d+$/.test(v.trim())) return parseInt(v, 10);
+    return undefined;
+  };
   RealAdapter.prototype._projectedBody = function (raw) {
-    // The writable, non-value fields shared by both write serializers.
+    // The writable, non-value fields shared by both write serializers,
+    // projected field-by-field onto FeatureStateSerializerBasic /
+    // WritableNestedFeatureState (live swagger, 26 Nov 2026; the full
+    // field-by-field contract is written out in KEY_HOOKUP.md). The
+    // read-only keys (id, uuid, version, created_at, updated_at,
+    // deleted_at and, on the environment route, feature_state_value)
+    // are never emitted, and neither is any other key a list item
+    // happens to carry — only the fields below can appear.
     var body = { feature: raw.feature, enabled: !!raw.enabled };
-    if (raw.environment != null) body.environment = raw.environment;
-    if (raw.identity != null) body.identity = raw.identity;
-    if (raw.feature_segment != null) body.feature_segment = raw.feature_segment;
-    if (raw.change_request != null) body.change_request = raw.change_request;
+    var f = this._intField(raw.feature);
+    if (f !== undefined) body.feature = f;
+    var env = this._intField(raw.environment);
+    if (env !== undefined) body.environment = env;
+    var ident = this._intField(raw.identity);
+    if (ident !== undefined) body.identity = ident;
+    var seg = this._intField(raw.feature_segment);
+    if (seg !== undefined) body.feature_segment = seg;
+    var cr = this._intField(raw.change_request);
+    if (cr !== undefined) body.change_request = cr;
     if (raw.environment_feature_version != null) body.environment_feature_version = raw.environment_feature_version;
     if (raw.live_from != null) body.live_from = raw.live_from;
     if (raw.identifier) body.identifier = raw.identifier;

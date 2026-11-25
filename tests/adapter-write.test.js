@@ -10,7 +10,16 @@
    - Value writes take PUT /features/featurestates/{id}/
      (WritableNestedFeatureState): `environment` + `feature` required,
      feature_state_value is a nested {type, string_value, integer_value,
-     boolean_value} with type in int / unicode / bool. */
+     boolean_value} with type in int / unicode / bool.
+   Round 3 (26 Nov 2026): the round-2 bodies were spec-correct per the
+   swagger yet the live write still 400'd, and the adapter reported only
+   the status. So now: a non-OK response's body is appended to the
+   returned detail (the API names the rejected field itself), and the
+   projection coerces integer-typed fields — the featurestates LIST
+   answers with FeatureStateSerializerWithIdentity, whose `identity` is
+   a nested {id, identifier} object where the write serializers want an
+   integer. A list-shaped fixture below proves only writable keys are
+   emitted, with identity coerced to its integer id. */
 'use strict';
 const assert = require('assert');
 const { RealAdapter } = require('../js/adapter.js');
@@ -29,20 +38,38 @@ const FS_MV = { id: 9002, feature: 78, environment: 116564, enabled: true,
                   { id: 502, multivariate_feature_option: 62, percentage_allocation: 30 }
                 ],
                 live_from: null, version: 1, uuid: 'fs-9002', created_at: '2026-11-25T00:00:00Z' };
+/* Shaped like a real LIST item (FeatureStateSerializerWithIdentity):
+   `identity` is a nested object, feature_state_value is an object, and
+   the item carries keys the write serializers do not define at all. */
+const FS_LISTY = { id: 9003, feature: 79, environment: 116564, enabled: true,
+                   identity: { id: 555, identifier: 'user-1' }, identifier: 'user-1',
+                   feature_state_value: { type: 'unicode', string_value: 'x', integer_value: null, boolean_value: null },
+                   featurestate_uuid: 'not-a-serializer-field',
+                   multivariate_feature_state_values: [],
+                   live_from: null, version: 3, uuid: 'fs-9003',
+                   created_at: '2026-11-25T00:00:00Z', updated_at: '2026-11-25T00:00:00Z', deleted_at: null };
+
+let failWrites = false; // when true, PUTs answer 400 with a JSON body
 
 global.fetch = function (url, options) {
   const method = (options && options.method) || 'GET';
   calls.push({ method: method, url: url, body: options && options.body ? JSON.parse(options.body) : null });
+  if (failWrites && method === 'PUT') {
+    return Promise.resolve({ ok: false, status: 400,
+      text: () => Promise.resolve('{"feature":["This field is required."]}'),
+      json: () => Promise.resolve({}) });
+  }
   let payload;
   if (url.endsWith('/projects/54209/environments/')) {
     payload = [{ id: 116564, name: 'Development', api_key: ENV_KEY }];
   } else if (url.endsWith('/projects/54209/features/')) {
     payload = { results: [
       { id: 77, name: 'test_flag', type: 'STANDARD', description: '' },
-      { id: 78, name: 'mv_flag', type: 'MULTIVARIATE', description: '' }
+      { id: 78, name: 'mv_flag', type: 'MULTIVARIATE', description: '' },
+      { id: 79, name: 'listy_flag', type: 'STANDARD', description: '' }
     ] };
   } else if (url.endsWith('/environments/' + ENV_KEY + '/featurestates/')) {
-    payload = { results: [FS_PLAIN, FS_MV] };
+    payload = { results: [FS_PLAIN, FS_MV, FS_LISTY] };
   } else if (url.indexOf('/featurestates/') !== -1) {
     payload = {};
   } else {
@@ -128,6 +155,32 @@ function check(name, fn) {
       { multivariate_feature_option: 61, percentage_allocation: 70, id: 501 },
       { multivariate_feature_option: 62, percentage_allocation: 30, id: 502 }
     ]);
+  });
+
+  await check('a list-shaped state projects to serializer-writable keys only, identity coerced to its integer id', async () => {
+    const r = await a.applyChange({ kind: 'set_enabled', envId: ENV_ID, feature: 'listy_flag', after: { enabled: false } });
+    assert.strictEqual(r.ok, true);
+    const put = lastPut();
+    assert.strictEqual(put.url, 'https://api.flagsmith.com/api/v1/environments/' + ENV_KEY + '/featurestates/9003/');
+    const WRITABLE = ['feature', 'enabled', 'environment', 'identity', 'feature_segment', 'change_request',
+                      'environment_feature_version', 'live_from', 'identifier', 'multivariate_feature_state_values'];
+    Object.keys(put.body).forEach(function (k) {
+      assert.ok(WRITABLE.indexOf(k) !== -1, 'non-writable key in the write body: ' + k);
+    });
+    assert.strictEqual(put.body.feature, 79);
+    assert.strictEqual(put.body.identity, 555); // coerced from the list shape's nested {id, identifier}
+    assert.strictEqual(typeof put.body.identity, 'number');
+    assert.ok(!('featurestate_uuid' in put.body), 'an extra list key leaked into the write body');
+    assert.ok(!('feature_state_value' in put.body), 'read-only on this route; must not be sent');
+  });
+
+  await check('a 400 response body is surfaced in the returned detail', async () => {
+    failWrites = true;
+    const r = await a.applyChange({ kind: 'set_enabled', envId: ENV_ID, feature: 'test_flag', after: { enabled: true } });
+    failWrites = false;
+    assert.strictEqual(r.ok, false);
+    assert.ok(r.detail.indexOf('Flagsmith API 400') !== -1, 'detail names the status: ' + r.detail);
+    assert.ok(r.detail.indexOf('This field is required.') !== -1, 'detail carries the API body text: ' + r.detail);
   });
 
   await check('no call ever addresses featurestates by numeric environment id', async () => {
