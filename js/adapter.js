@@ -130,7 +130,16 @@
      write-shape facts that bit in the first live run are recorded in
      KEY_HOOKUP.md: the featurestates PUT requires `feature`, a v1
      feature state has no percentage field, and value writes go through
-     /features/featurestates/ with a nested feature_state_value. */
+     /features/featurestates/ with a nested feature_state_value.
+     Environments with v2 feature versioning (project 54209 is one —
+     confirmed live 26 Nov 2026 by the API's own 400: "This environment
+     uses v2 feature versioning. Use the environment feature version
+     endpoint instead.") reject those legacy writes outright; their
+     writes go through the environment feature version endpoints
+     (create/reuse a draft version, change the state inside it, publish).
+     The environments list carries the upfront signal
+     (use_v2_feature_versioning); when it is absent the adapter latches
+     onto the version flow from that 400 instead. */
 
   function RealAdapter(config) {
     this.mode = 'LIVE';
@@ -140,6 +149,8 @@
     this._key = config.apiKey || ''; // memory only; never logged, never returned
     this._envCache = null;
     this._envKeys = {}; // envId -> environment api_key, learned by listEnvironments; memory only, never returned
+    this._v2Envs = {}; // envId -> true when the environment uses v2 feature versioning
+                       // (the environments list flag, or latched from the versioning 400)
     this._stateIds = {}; // "envId:featureName" -> feature state id, learned on read
     this._rawStates = {}; // "envId:featureName" -> raw feature state object, learned on read;
                           // write bodies are built from it so required fields survive the PUT
@@ -181,6 +192,10 @@
         // alongside the id — inside the adapter only, never in the
         // returned list.
         if (e.api_key) self._envKeys[String(e.id)] = e.api_key;
+        // The environment serializers carry use_v2_feature_versioning
+        // (live swagger, 26 Nov 2026): the upfront signal that writes
+        // for this environment must use the feature version endpoints.
+        if (e.use_v2_feature_versioning) self._v2Envs[String(e.id)] = true;
         return { id: String(e.id), name: e.name };
       });
       self._envCache = list;
@@ -288,7 +303,10 @@
          weights; its feature_state_value is read-only there.
        - PUT /features/featurestates/{id}/
          (WritableNestedFeatureState) — the value lives here, as a
-         nested {type, string_value, integer_value, boolean_value}. */
+         nested {type, string_value, integer_value, boolean_value}.
+     On a v2-versioned environment both routes are rejected and the
+     write goes through the feature version endpoints instead — see
+     _applyChangeV2 below. */
   RealAdapter.prototype._mvBody = function (raw) {
     var vals = raw.multivariate_feature_state_values;
     if (!Array.isArray(vals) || !vals.length) return null;
@@ -352,6 +370,133 @@
     if (value == null) return { type: 'unicode', string_value: null, integer_value: null, boolean_value: null };
     return { type: 'unicode', string_value: String(value), integer_value: null, boolean_value: null };
   };
+  /* ---- v2 feature versioning writes ----
+     On a v2-versioned environment the legacy featurestates PUT is
+     rejected no matter the body (live 400, 26 Nov 2026: "This
+     environment uses v2 feature versioning. Use the environment
+     feature version endpoint instead."). The version flow, from the
+     live swagger (paths are relative to the API base; note the
+     versions family addresses the environment by its NUMERIC pk,
+     unlike the featurestates routes which use the api_key):
+       GET  /environments/{envPk}/features/{featurePk}/versions/
+            -> PaginatedEnvironmentFeatureVersionList
+       POST /environments/{envPk}/features/{featurePk}/versions/
+            body EnvironmentFeatureVersionCreate (all fields optional)
+            -> 201, the version (uuid, published, is_live, ...)
+       GET  /environments/{envPk}/features/{featurePk}/versions/{uuid}/featurestates/
+            -> [CustomEnvironmentFeatureVersionFeatureState]
+       POST .../versions/{uuid}/featurestates/            (create a state)
+       PUT  .../versions/{uuid}/featurestates/{id}/       (update a state)
+            body CustomEnvironmentFeatureVersionFeatureState:
+            feature_state_value is REQUIRED there (the nested object);
+            writable: enabled, feature_state_value, feature_segment,
+            multivariate_feature_state_values; read-only, never sent:
+            id, feature, environment, identity, change_request, uuid,
+            live_from, created_at, updated_at, deleted_at.
+       POST /environments/{envPk}/features/{featurePk}/versions/{uuid}/publish/
+            body EnvironmentFeatureVersionPublish (live_from optional)
+     A change is: reuse the feature's unpublished draft version (or
+     create one), PUT the plain environment state inside it with the
+     change applied, then publish. Only after publish does the live
+     featurestates list — and so the executor's read-back — move. */
+  RealAdapter.prototype._isVersioningError = function (e) {
+    return !!e && typeof e.message === 'string' && /v2 feature versioning/i.test(e.message);
+  };
+  RealAdapter.prototype._nestedValue = function (v) {
+    // A version-state read hands feature_state_value back as the nested
+    // FeatureStateValue object already; pass it through trimmed to its
+    // four keys. A scalar (or nothing) converts via _valueObject.
+    if (v && typeof v === 'object') {
+      return { type: v.type != null ? v.type : null,
+               string_value: v.string_value != null ? v.string_value : null,
+               integer_value: v.integer_value != null ? v.integer_value : null,
+               boolean_value: v.boolean_value != null ? v.boolean_value : null };
+    }
+    return this._valueObject(v != null ? v : null);
+  };
+  RealAdapter.prototype._versionStateBody = function (rawState, mutate) {
+    // The writable projection for CustomEnvironmentFeatureVersionFeatureState,
+    // built from a fetched state (a version state, or the live raw state
+    // when a state has to be created inside the version). mutate is
+    // { enabled } and/or { value } where value is a nested value object.
+    var body = { enabled: !!rawState.enabled };
+    var seg = this._intField(rawState.feature_segment);
+    if (seg !== undefined) body.feature_segment = seg;
+    var mv = this._mvBody(rawState);
+    if (mv) body.multivariate_feature_state_values = mv;
+    body.feature_state_value = mutate.value !== undefined ? mutate.value
+      : this._nestedValue(rawState.feature_state_value);
+    if (mutate.enabled !== undefined) body.enabled = !!mutate.enabled;
+    return body;
+  };
+  RealAdapter.prototype._applyChangeV2 = function (change, raw, mutate) {
+    var self = this;
+    var envPk = parseInt(change.envId, 10);
+    var featureId = this._intField(raw.feature);
+    if (!isFinite(envPk) || featureId === undefined) {
+      return Promise.reject(new Error('Cannot address the feature version endpoints for ' + change.feature + ' (environment ' + change.envId + ').'));
+    }
+    var base = '/environments/' + envPk + '/features/' + featureId + '/versions/';
+    return this._fetch(base).then(function (data) {
+      var versions = (data && (data.results || data)) || [];
+      for (var i = 0; i < versions.length; i++) {
+        if (versions[i] && versions[i].published === false && versions[i].uuid) return versions[i].uuid;
+      }
+      return self._fetch(base, {
+        method: 'POST',
+        body: JSON.stringify({ description: 'FlagAgent change — ' + change.feature })
+      }).then(function (created) {
+        if (!created || !created.uuid) throw new Error('Flagsmith did not return a uuid for the new feature version of ' + change.feature + '.');
+        return created.uuid;
+      });
+    }).then(function (versionUuid) {
+      var statesPath = base + versionUuid + '/featurestates/';
+      return self._fetch(statesPath).then(function (states) {
+        var list = (states && (states.results || states)) || [];
+        var target = null;
+        for (var i = 0; i < list.length; i++) {
+          var s = list[i];
+          // The plain environment state: no segment, no identity.
+          if (s && s.feature_segment == null && s.identity == null) { target = s; break; }
+        }
+        if (target) {
+          return self._fetch(statesPath + target.id + '/', {
+            method: 'PUT', body: JSON.stringify(self._versionStateBody(target, mutate))
+          });
+        }
+        // A fresh version normally clones the live states; if the plain
+        // state is not there, create it already carrying the change.
+        return self._fetch(statesPath, {
+          method: 'POST', body: JSON.stringify(self._versionStateBody(raw, mutate))
+        });
+      }).then(function () {
+        return self._fetch(base + versionUuid + '/publish/', {
+          method: 'POST', body: JSON.stringify({})
+        });
+      });
+    });
+  };
+  RealAdapter.prototype._dispatchWrite = function (change, raw, legacyFn, mutate, detail) {
+    // One write, two possible routes: the feature version flow when the
+    // environment is known to be v2-versioned, the legacy PUT otherwise
+    // — with a reactive switch (latched for the session) when the legacy
+    // PUT is answered with the versioning 400.
+    var self = this;
+    var viaV2 = function () {
+      return self._applyChangeV2(change, raw, mutate).then(function () { return { ok: true, detail: detail }; });
+    };
+    if (this._v2Envs[change.envId]) {
+      return viaV2().catch(function (e) { return { ok: false, detail: e.message }; });
+    }
+    return legacyFn().then(function () { return { ok: true, detail: detail }; })
+      .catch(function (e) {
+        if (self._isVersioningError(e)) {
+          self._v2Envs[change.envId] = true;
+          return viaV2().catch(function (e2) { return { ok: false, detail: e2.message }; });
+        }
+        return { ok: false, detail: e.message };
+      });
+  };
   RealAdapter.prototype.applyChange = function (change) {
     var self = this;
     if (change.kind === 'create_feature') {
@@ -370,39 +515,52 @@
       case 'set_enabled': {
         var enabledBody = this._projectedBody(raw);
         enabledBody.enabled = !!change.after.enabled;
-        return this._envApiKey(change.envId).then(function (envKey) {
-          return self._fetch('/environments/' + envKey + '/featurestates/' + sid + '/', {
-            method: 'PUT', body: JSON.stringify(enabledBody)
-          });
-        }).then(function () { return { ok: true, detail: change.feature + ' is now ' + (enabledBody.enabled ? 'ON' : 'OFF') + '.' }; })
-          .catch(function (e) { return { ok: false, detail: e.message }; });
+        return this._dispatchWrite(change, raw,
+          function () {
+            return self._envApiKey(change.envId).then(function (envKey) {
+              return self._fetch('/environments/' + envKey + '/featurestates/' + sid + '/', {
+                method: 'PUT', body: JSON.stringify(enabledBody)
+              });
+            });
+          },
+          { enabled: !!change.after.enabled },
+          change.feature + ' is now ' + (change.after.enabled ? 'ON' : 'OFF') + '.');
       }
       case 'set_rollout': {
         var rollout = change.after.rollout;
         if (rollout !== 0 && rollout !== 100) {
-          // A v1 feature state has no percentage field (live swagger,
-          // 26 Nov 2026): a partial rollout exists only as per-variant
-          // percentage_allocation on a multivariate flag. Refuse plainly
-          // rather than send a field the API does not have.
-          return Promise.resolve({ ok: false, detail: 'A ' + rollout + '% rollout cannot be written through the v1 API: feature states have no percentage field (rollout % lives only in multivariate variant weights). Turn the flag fully on or off, or plan a variant change.' });
+          // No feature state has a percentage field — not on the v1
+          // routes and not inside a feature version either (live
+          // swagger, 26 Nov 2026): a partial rollout exists only as
+          // per-variant percentage_allocation on a multivariate flag.
+          // Refuse plainly rather than send a field the API does not have.
+          return Promise.resolve({ ok: false, detail: 'A ' + rollout + '% rollout cannot be written through the Flagsmith API: feature states have no percentage field (rollout % lives only in multivariate variant weights). Turn the flag fully on or off, or plan a variant change.' });
         }
         var rolloutBody = this._projectedBody(raw);
         rolloutBody.enabled = rollout === 100;
-        return this._envApiKey(change.envId).then(function (envKey) {
-          return self._fetch('/environments/' + envKey + '/featurestates/' + sid + '/', {
-            method: 'PUT', body: JSON.stringify(rolloutBody)
-          });
-        }).then(function () { return { ok: true, detail: change.feature + ' rollout is now ' + rollout + '%.' }; })
-          .catch(function (e) { return { ok: false, detail: e.message }; });
+        return this._dispatchWrite(change, raw,
+          function () {
+            return self._envApiKey(change.envId).then(function (envKey) {
+              return self._fetch('/environments/' + envKey + '/featurestates/' + sid + '/', {
+                method: 'PUT', body: JSON.stringify(rolloutBody)
+              });
+            });
+          },
+          { enabled: rollout === 100 },
+          change.feature + ' rollout is now ' + rollout + '%.');
       }
       case 'set_value': {
         var valueBody = this._projectedBody(raw);
         if (valueBody.environment == null) valueBody.environment = parseInt(change.envId, 10);
         valueBody.feature_state_value = this._valueObject(change.after.value);
-        return this._fetch('/features/featurestates/' + sid + '/', {
-          method: 'PUT', body: JSON.stringify(valueBody)
-        }).then(function () { return { ok: true, detail: change.feature + ' value set.' }; })
-          .catch(function (e) { return { ok: false, detail: e.message }; });
+        return this._dispatchWrite(change, raw,
+          function () {
+            return self._fetch('/features/featurestates/' + sid + '/', {
+              method: 'PUT', body: JSON.stringify(valueBody)
+            });
+          },
+          { value: self._valueObject(change.after.value) },
+          change.feature + ' value set.');
       }
       default:
         return Promise.resolve({ ok: false, detail: 'Change kind ' + change.kind + ' is not wired for the live API yet; see KEY_HOOKUP.md.' });
