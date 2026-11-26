@@ -1,6 +1,6 @@
 # FlagAgent
 
-**Say the rollout. See the diff. Nothing moves without your stamp.**
+**FlagAgent — change a production flag in one sentence. Nothing applies until you say yes.**
 
 FlagAgent works a Flagsmith project from plain words. You describe a change — *"Release the new checkout to 10% of users in production, only if the payments kill switch stays off"* — and FlagAgent:
 
@@ -54,3 +54,9 @@ All 49 checks pass. Nothing was edited to make a test pass; one real bug the QA 
 - The live adapter is written against the documented Flagsmith Management API. Two field mappings the docs do not pin down (rollout percentage on a feature state, multivariate weight writes) are marked `ASSUMPTION` in the code and listed in KEY_HOOKUP.md — they must be confirmed against one raw API response in the 5-minute verification before the live demo.
 - FlagAgent stages everything up to starting a Flagsmith experiment; starting one stays a deliberate human step in Flagsmith itself (Flagsmith's own guide notes its MCP server cannot start experiments). The plan says so when relevant.
 - One flag per instruction, on purpose. Compound instructions get a clarification, not a guess.
+
+## FlagBench-20 — live run
+
+Scored run on the real Flagsmith project, 26 Nov 2026 — worked case by case through the live page against "My first project" (project 54209). Measured: **plans correct 16/20 · cases fully passing 11/20 · traps caught 5/5 · unapproved writes 0.** Full per-case record: `bench/RESULTS_LIVE.md`.
+
+The shortfall against the mock rehearsal (20/20) is the live API, not the gate: a boolean feature state has no percentage field, so partial rollouts (10% / 25% / 40% / 50%) cannot be written, and segment overrides and flag deletion are not wired for the live API yet. Every refusal left the project unchanged — unapproved writes stayed zero.
